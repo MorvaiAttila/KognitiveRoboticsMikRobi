@@ -26,7 +26,7 @@ class ImageSubscriber(Node):
         self.image_size = 24
 
         model_path = Path.home() / "ros2_ws" / "src" / "Week-1-8-Cognitive-robotics" / "turtlebot3_mogi_py" / "network_model" / "model.best.keras"
-        
+
         print("TensorFlow version: %s" % tf.__version__)
         print("Keras version: %s" % tf.keras.__version__)
         print("CNN model: %s" % model_path)
@@ -182,6 +182,11 @@ class ImageSubscriber(Node):
         else:
             self.consecutive_nothing_count = 0
             self.last_non_nothing_prediction = prediction  # Update last non-"Nothing" prediction
+        if self.consecutive_nothing_count < 5:
+            effective_prediction = self.last_non_nothing_prediction
+        else:
+            effective_prediction = smoothed_prediction if smoothed_prediction != 3 else self.last_non_nothing_prediction
+
         print(f"Consecutive Nothing Predictions: {self.consecutive_nothing_count}, Last Non-Nothing Prediction: {self.last_non_nothing_prediction}")
 
         # Smooth predictions by taking the most common recent prediction
@@ -200,15 +205,18 @@ class ImageSubscriber(Node):
             if effective_prediction == 0:  # Forward
                 self.cmd_vel_msg.angular.z = 0.0
                 self.cmd_vel_msg.linear.x = 0.12
+                self.last_angular_z = self.cmd_vel_msg.angular.z
             elif effective_prediction == 1:  # Left
-                self.cmd_vel_msg.angular.z = -0.2  # Slightly increased for sharper turns
+                self.cmd_vel_msg.angular.z = -0.2  # Élesebb kanyar
                 self.cmd_vel_msg.linear.x = 0.12
+                self.last_angular_z = self.cmd_vel_msg.angular.z
             elif effective_prediction == 2:  # Right
-                self.cmd_vel_msg.angular.z = 0.2   # Slightly increased for sharper turns
+                self.cmd_vel_msg.angular.z = 0.2   # Élesebb kanyar
                 self.cmd_vel_msg.linear.x = 0.12
-            else:  # Fallback to default forward movement (boost speed at gaps)
-                self.cmd_vel_msg.angular.z = 0.0
-                self.cmd_vel_msg.linear.x = 0.15  # Boost speed to cross the bump
+                self.last_angular_z = self.cmd_vel_msg.angular.z
+            else:  # Fallback to last known direction
+                self.cmd_vel_msg.angular.z = self.last_angular_z * 0.9  # Tompított ismétlés
+                self.cmd_vel_msg.linear.x = 0.07  # Óvatosabb előrehaladás
 
         print(f"Updated cmd_vel: linear.x={self.cmd_vel_msg.linear.x}, angular.z={self.cmd_vel_msg.angular.z}")
 
@@ -227,8 +235,8 @@ class ImageSubscriber(Node):
         ignore_mask_color = 255
         imshape = img.shape
         # Slightly wider trapezoid mask to improve turn detection
-        vertices = np.array([[(imshape[1]*0.1, imshape[0]), (imshape[1]*0.4, imshape[0]*0.4), 
-                              (imshape[1]*0.6, imshape[0]*0.4), (imshape[1]*0.9, imshape[0])]], dtype=np.int32)
+        vertices = np.array([[(imshape[1]*0.05, imshape[0]), (imshape[1]*0.3, imshape[0]*0.4), 
+                              (imshape[1]*0.7, imshape[0]*0.4), (imshape[1]*0.95, imshape[0])]], dtype=np.int32)
         cv2.fillPoly(mask, vertices, ignore_mask_color)
         masked_image = cv2.bitwise_and(img, mask)
         return masked_image, mask
