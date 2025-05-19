@@ -30,6 +30,7 @@ class LineMapper(Node):
         # Segédváltozók
         self.bridge = CvBridge()
         self.break_id = 0
+        self.break_positions = []
 
         # Szakadásdetektálás változó, alapértelmezett a false
         self.break_detected = False
@@ -91,6 +92,15 @@ class LineMapper(Node):
             now = rclpy.time.Time()
             trans = self.tf_buffer.lookup_transform('map', 'base_link', now)
 
+            current_x = trans.transform.translation.x
+            current_y = trans.transform.translation.y
+
+            for x, y in self.break_positions:
+                dist = np.hypot(current_x - x, current_y - y)
+                if dist < 0.3:
+                    self.get_logger().info(f'Line break already published at (x={x:.2f}, y={y:.2f}), skipping.')
+                    return
+
             marker = Marker()
             marker.header.frame_id = 'map'
             marker.header.stamp = self.get_clock().now().to_msg()
@@ -116,8 +126,10 @@ class LineMapper(Node):
 
             self.marker_pub.publish(marker)
             self.get_logger().info(
-                f'Published marker {self.break_id} at (x={trans.transform.translation.x:.2f}, y={trans.transform.translation.y:.2f})'
+                f'Published marker {self.break_id} at (x={current_x:.2f}, y={current_y:.2f})'
             )
+
+            self.break_positions.append((current_x, current_y))
             self.break_id += 1
 
         except (LookupException, ConnectivityException, ExtrapolationException) as e:
